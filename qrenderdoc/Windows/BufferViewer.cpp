@@ -1649,10 +1649,13 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
 
   m_ExportCSV = new QAction(tr("Export to &CSV"), this);
   m_ExportCSV->setIcon(Icons::save());
+  m_ExportObj = new QAction(tr("Export to &Obj"), this);
+  m_ExportObj->setIcon(Icons::save());
   m_ExportBytes = new QAction(tr("Export to &Bytes"), this);
   m_ExportBytes->setIcon(Icons::save());
 
   m_ExportMenu->addAction(m_ExportCSV);
+  m_ExportMenu->addAction(m_ExportObj);
   m_ExportMenu->addAction(m_ExportBytes);
 
   m_DebugVert = new QAction(tr("&Debug this Vertex"), this);
@@ -1662,6 +1665,8 @@ BufferViewer::BufferViewer(ICaptureContext &ctx, bool meshview, QWidget *parent)
 
   QObject::connect(m_ExportCSV, &QAction::triggered,
                    [this] { exportData(BufferExport(BufferExport::CSV)); });
+  QObject::connect(m_ExportObj, &QAction::triggered,
+                   [this] { exportData(BufferExport(BufferExport::Obj)); });
   QObject::connect(m_ExportBytes, &QAction::triggered,
                    [this] { exportData(BufferExport(BufferExport::RawBytes)); });
   QObject::connect(m_DebugVert, &QAction::triggered, this, &BufferViewer::debugVertex);
@@ -1964,6 +1969,7 @@ void BufferViewer::stageRowMenu(MeshDataStage stage, QMenu *menu, const QPoint &
   }
 
   menu->addAction(m_ExportCSV);
+  menu->addAction(m_ExportObj);
   menu->addAction(m_ExportBytes);
 
   menu->popup(m_CurView->viewport()->mapToGlobal(pos));
@@ -3302,6 +3308,8 @@ void BufferViewer::exportData(const BufferExport &params)
     filter = tr("CSV Files (*.csv)");
   else if(params.format == BufferExport::RawBytes)
     filter = tr("Binary Files (*.bin)");
+  else if(params.format == BufferExport::Obj)
+    filter = tr("Binary Files (*.obj)");
 
   QString filename = RDDialog::getSaveFileName(this, tr("Export buffer to bytes"), QString(),
                                                tr("%1;;All files (*)").arg(filter));
@@ -3425,7 +3433,83 @@ void BufferViewer::exportData(const BufferExport &params)
         s << "\n";
       }
     }
+	else if (params.format == BufferExport::Obj)
+	{
+      QTextStream s(f);
+      const BufferConfiguration &config = model->getConfig();
 
+	  int col = 2;// model->posColumn();
+	  
+
+	  const FormatElement &el = model->elementForColumn(col);
+
+	  if (el.buffer < config.buffers.size())
+	  {
+		  const byte *data = config.buffers[el.buffer]->data();
+		  const byte *end = config.buffers[el.buffer]->end();
+
+		  data += el.offset;
+		  const byte *_element = data;
+		  const byte * _elementEnd = data;
+		  int idx = 0;
+		  while(_elementEnd < end)
+		  {
+			  _element = data;
+			  if (!el.perinstance)
+			  {
+				  _element = data + config.buffers[el.buffer]->stride * idx;
+			  }
+			 _elementEnd = _element + el.byteSize();
+
+			  QVariantList list = el.GetVariants(_element, _elementEnd);
+
+			  if (!list.isEmpty())
+			  {
+				  QMetaType::Type vt = GetVariantMetatype(list[0]);
+
+				  if (vt == QMetaType::Float)
+				  {
+					  s << "v";
+					  for (int row = 0; row < list.size(); row++)
+					  {
+						  s << " ";
+						  s << list[row].toFloat();
+					  }
+					  s << "\n";
+				  }
+			  }
+			  if (!el.perinstance)
+			  {
+				  _elementEnd = data + config.buffers[el.buffer]->stride * ++idx;
+			  }
+		  }
+	  }
+
+
+	  /*
+      for(int row = 0; row < model->rowCount(); row++)
+      {
+		  s << "vt ";
+          s << model->data(model->index(row, 5), Qt::DisplayRole).toString();
+		  s << " ";
+          s << model->data(model->index(row, 6), Qt::DisplayRole).toString();
+		  s << " 0.00000";
+          s << "\n";
+      }
+	  */
+
+      for(int row = 0; row < model->rowCount(); )
+      {
+		  s << "f ";
+          s << model->data(model->index(row++, 1), Qt::DisplayRole).toString();
+		  s << " ";
+          s << model->data(model->index(row++, 1), Qt::DisplayRole).toString();
+		  s << " ";
+          s << model->data(model->index(row++, 1), Qt::DisplayRole).toString();
+          s << "\n";
+      }
+
+	}
     f->close();
 
     delete f;
